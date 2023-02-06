@@ -1526,142 +1526,130 @@ func TestWatchList(t *testing.T) {
 	}
 }
 
-func BenchmarkWatch(b *testing.B) {
-	w, err := NewWatcher()
-	if err != nil {
-		b.Fatal(err)
-	}
-
-	tmp := b.TempDir()
-	file := join(tmp, "file")
-	err = w.Add(tmp)
-	if err != nil {
-		b.Fatal(err)
-	}
-
-	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		for {
-			select {
-			case err, ok := <-w.Errors:
-				if !ok {
-					wg.Done()
-					return
-				}
-				b.Error(err)
-			case _, ok := <-w.Events:
-				if !ok {
-					wg.Done()
-					return
-				}
-			}
-		}
-	}()
-
-	b.ResetTimer()
-	for n := 0; n < b.N; n++ {
-		fp, err := os.Create(file)
+func TestNewBufferedWatcher(t *testing.T) {
+	check := func(w *Watcher, err error, c int) {
 		if err != nil {
-			b.Fatal(err)
+			t.Fatal(err)
 		}
-		err = fp.Close()
-		if err != nil {
-			b.Fatal(err)
+		if w.Events == nil {
+			t.Fatal("nil channel")
+		}
+		if err := w.Close(); err != nil {
+			t.Fatal(err)
 		}
 	}
-	err = w.Close()
-	if err != nil {
-		b.Fatal(err)
-	}
-	wg.Wait()
+
+	t.Run("default", func(t *testing.T) {
+		w, err := NewWatcher()
+
+		defSize := 0
+		if runtime.GOOS == "windows" {
+			defSize = 50
+		}
+		check(w, err, defSize)
+	})
+
+	t.Run("0", func(t *testing.T) {
+		w, err := NewBufferedWatcher(0)
+		check(w, err, 0)
+	})
+
+	t.Run("42", func(t *testing.T) {
+		w, err := NewBufferedWatcher(42)
+		check(w, err, 42)
+	})
 }
 
-func BenchmarkBufferedWatch(b *testing.B) {
-	w, err := NewBufferedWatcher(4096)
-	if err != nil {
-		b.Fatal(err)
-	}
+func BenchmarkWatch(b *testing.B) {
+	run := func(b *testing.B, w *Watcher) {
+		tmp := b.TempDir()
+		file := join(tmp, "file")
+		err := w.Add(tmp)
+		if err != nil {
+			b.Fatal(err)
+		}
 
-	tmp := b.TempDir()
-	file := join(tmp, "file")
-	err = w.Add(tmp)
-	if err != nil {
-		b.Fatal(err)
-	}
-
-	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		for {
-			select {
-			case err, ok := <-w.Errors:
-				if !ok {
-					wg.Done()
-					return
-				}
-				b.Error(err)
-			case _, ok := <-w.Events:
-				if !ok {
-					wg.Done()
-					return
+		var wg sync.WaitGroup
+		wg.Add(1)
+		go func() {
+			for {
+				select {
+				case err, ok := <-w.Errors:
+					if !ok {
+						wg.Done()
+						return
+					}
+					b.Error(err)
+				case _, ok := <-w.Events:
+					if !ok {
+						wg.Done()
+						return
+					}
 				}
 			}
-		}
-	}()
+		}()
 
-	b.ResetTimer()
-	for n := 0; n < b.N; n++ {
-		fp, err := os.Create(file)
+		b.ResetTimer()
+		for n := 0; n < b.N; n++ {
+			fp, err := os.Create(file)
+			if err != nil {
+				b.Fatal(err)
+			}
+			err = fp.Close()
+			if err != nil {
+				b.Fatal(err)
+			}
+		}
+		err = w.Close()
 		if err != nil {
 			b.Fatal(err)
 		}
-		err = fp.Close()
+		wg.Wait()
+	}
+
+	b.Run("default", func(b *testing.B) {
+		w, err := NewWatcher()
 		if err != nil {
 			b.Fatal(err)
 		}
-	}
-	err = w.Close()
-	if err != nil {
-		b.Fatal(err)
-	}
-	wg.Wait()
+		run(b, w)
+	})
+	b.Run("buffered", func(b *testing.B) {
+		w, err := NewBufferedWatcher(4096)
+		if err != nil {
+			b.Fatal(err)
+		}
+		run(b, w)
+	})
 }
 
 func BenchmarkAddRemove(b *testing.B) {
-	w, err := NewWatcher()
-	if err != nil {
-		b.Fatal(err)
-	}
+	run := func(b *testing.B, w *Watcher) {
+		tmp := b.TempDir()
 
-	tmp := b.TempDir()
-
-	b.ResetTimer()
-	for n := 0; n < b.N; n++ {
-		if err := w.Add(tmp); err != nil {
-			b.Fatal(err)
-		}
-		if err := w.Remove(tmp); err != nil {
-			b.Fatal(err)
+		b.ResetTimer()
+		for n := 0; n < b.N; n++ {
+			if err := w.Add(tmp); err != nil {
+				b.Fatal(err)
+			}
+			if err := w.Remove(tmp); err != nil {
+				b.Fatal(err)
+			}
 		}
 	}
-}
 
-func BenchmarkBufferedAddRemove(b *testing.B) {
-	w, err := NewBufferedWatcher(4096)
-	if err != nil {
-		b.Fatal(err)
-	}
-
-	tmp := b.TempDir()
-
-	b.ResetTimer()
-	for n := 0; n < b.N; n++ {
-		if err := w.Add(tmp); err != nil {
+	b.Run("default", func(b *testing.B) {
+		w, err := NewWatcher()
+		if err != nil {
 			b.Fatal(err)
 		}
-		if err := w.Remove(tmp); err != nil {
+		run(b, w)
+	})
+	b.Run("buffered", func(b *testing.B) {
+		w, err := NewBufferedWatcher(4096)
+		if err != nil {
 			b.Fatal(err)
 		}
-	}
+		run(b, w)
+	})
 }
