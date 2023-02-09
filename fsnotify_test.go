@@ -1088,7 +1088,7 @@ func TestClose(t *testing.T) {
 		t.Parallel()
 
 		for i := 0; i < 150; i++ {
-			w, err := NewWatcher()
+			w, err := NewBufferedWatcher(4096) // XXX
 			if err != nil {
 				if strings.Contains(err.Error(), "too many") { // syscall.EMFILE
 					time.Sleep(100 * time.Millisecond)

@@ -45,7 +45,7 @@ func waitForEvents()  { time.Sleep(500 * time.Millisecond) }
 // newWatcher initializes an fsnotify Watcher instance.
 func newWatcher(t *testing.T, add ...string) *Watcher {
 	t.Helper()
-	w, err := NewWatcher()
+	w, err := NewBufferedWatcher(4096) // XXX
 	if err != nil {
 		t.Fatalf("newWatcher: %s", err)
 	}
